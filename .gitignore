@@ -1,0 +1,4 @@
+build/
+*.elf
+src/sd_loader.h
+*.cbp
