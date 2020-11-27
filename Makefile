@@ -144,6 +144,7 @@ $(OUTPUT).elf: $(OFILES)
 	@echo "linking ... $(TARGET).elf"
 	$(Q)$(LD) -n -T $^ $(LDFLAGS) -o ../$(BUILD_DBG).elf  $(LIBPATHS) $(LIBS)
 	$(Q)$(OBJCOPY) -S -R .comment -R .gnu.attributes ../$(BUILD_DBG).elf $@
+	$(Q)$(OBJCOPY) -O binary -R .comment -R .gnu.attributes ../$(BUILD_DBG).elf ../payload.bin
 
 #---------------------------------------------------------------------------------
 %.a:
