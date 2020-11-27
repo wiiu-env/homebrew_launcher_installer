@@ -28,6 +28,22 @@ DEVKITPPC=/opt/devkitpro/devkitPPC
 The command `make` should produce a `payload.elf`, meant to be used with the
 [payload_loader](https://github.com/wiiu-env/payload_loader)
 
+## Building using the Dockerfile
+
+It's possible to use a docker image for building. This way you don't need anything installed on your host system.
+
+```
+# Build docker image (only needed once)
+docker build . -t hbl-installer-builder
+
+# make 
+docker run -it --rm -v ${PWD}:/project hbl-installer-builder make
+
+# make clean
+docker run -it --rm -v ${PWD}:/project hbl-installer-builder make clean
+```
+
+
 # Credits
 
 - dimok789: [original installer](https://github.com/dimok789/homebrew_launcher))
