@@ -2,3 +2,7 @@ build/
 *.elf
 src/sd_loader.h
 *.cbp
+payload.bin
+.idea/
+cmake-build-debug/
+CMakeLists.txt
