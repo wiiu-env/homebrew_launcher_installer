@@ -1,0 +1,4 @@
+build/
+*.elf
+sd_loader.c
+sd_loader.h

@@ -1,6 +1,6 @@
 #include "elf_abi.h"
-#include "sd_loader.h"
 #include "../sd_loader/src/common.h"
+#include "../sd_loader/sd_loader.h"
 #include <stdint.h>
 
 #define OSDynLoad_Acquire ((void (*)(char* rpl, unsigned int *handle))0x0102A3B4)
@@ -190,7 +190,7 @@ int _start(int argc, char **argv) {
 
     InstallPatches(&private_data);
 
-    unsigned char * pElfBuffer = (unsigned char *) sd_loader_sd_loader_elf; // use this address as temporary to load the elf
+    unsigned char * pElfBuffer = (unsigned char *) sd_loader; // use this address as temporary to load the elf
 
     unsigned int mainEntryPoint = load_elf_image(&private_data, pElfBuffer);
 

@@ -26,7 +26,8 @@ export OBJCOPY	:=	$(PREFIX)objcopy
 TARGET		:=	payload
 BUILD		:=	build
 BUILD_DBG	:=	$(TARGET)_dbg
-SOURCES		:=	src
+SOURCES		:=	src \
+				sd_loader
 DATA		:=
 INCLUDES	:=
 
@@ -71,7 +72,7 @@ export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 #---------------------------------------------------------------------------------
 # automatically build a list of object files for our project
 #---------------------------------------------------------------------------------
-CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c))) sd_loader.c
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 sFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
@@ -110,21 +111,20 @@ export OUTPUT	:=	$(CURDIR)/$(TARGET)
 .PHONY: $(BUILD) clean install
 
 #---------------------------------------------------------------------------------
-$(BUILD):  src/sd_loader.h 
+$(BUILD):  sd_loader/sd_loader.h
 	@[ -d $@ ] || mkdir -p $@
+	@$(MAKE) -j1 --no-print-directory -C $(CURDIR)/sd_loader -f $(CURDIR)/sd_loader/Makefile
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
     
-sd_loader_elf := sd_loader/sd_loader.elf
-src/sd_loader.h: $(sd_loader_elf)
-	xxd -i $< | sed "s/unsigned/static const unsigned/g;s/loader/loader/g;s/build_//g" > $@
+sd_loader_elf := sd_loader/sd_loader.h
 
 $(sd_loader_elf):
 	make -C sd_loader
 
-
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
+	@$(MAKE) --no-print-directory -C $(CURDIR)/sd_loader -f  $(CURDIR)/sd_loader/Makefile clean
 	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).bin $(BUILD_DBG).elf
 
 #---------------------------------------------------------------------------------
@@ -140,7 +140,7 @@ $(OUTPUT).elf: $(OFILES)
 #---------------------------------------------------------------------------------
 # This rule links in binary data with the .jpg extension
 #---------------------------------------------------------------------------------
-%.elf: link.ld $(OFILES)
+%.elf: link.ld $(OFILES) 
 	@echo "linking ... $(TARGET).elf"
 	$(Q)$(LD) -n -T $^ $(LDFLAGS) -o ../$(BUILD_DBG).elf  $(LIBPATHS) $(LIBS)
 	$(Q)$(OBJCOPY) -S -R .comment -R .gnu.attributes ../$(BUILD_DBG).elf $@

@@ -103,6 +103,12 @@ export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 					-I$(PORTLIBS)/include -I$(PORTLIBS)/include/freetype2
 
 #---------------------------------------------------------------------------------
+# path to tools
+#---------------------------------------------------------------------------------
+DEVKITPATH=$(shell echo "$(DEVKITPRO)" | sed -e 's/^\([a-zA-Z]\):/\/\1/')
+export PATH	:=	$(DEVKITPATH)/tools/bin:$(DEVKITPATH)/devkitPPC/bin:$(PATH)
+
+#---------------------------------------------------------------------------------
 # build a list of library paths
 #---------------------------------------------------------------------------------
 export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib) \
@@ -119,7 +125,7 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).bin $(BUILD_DBG).elf
+	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).bin $(BUILD_DBG).elf  $(BUILD_DBG).c  $(BUILD_DBG).h
 
 #---------------------------------------------------------------------------------
 else
@@ -129,7 +135,14 @@ DEPENDS	:=	$(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(OUTPUT).elf: $(OFILES)
+$(OUTPUT).h: $(OFILES)
+
+$(OUTPUT).c: $(OUTPUT).elf
+	@raw2c $<
+	@cp $(TARGET).c $@
+    
+$(OUTPUT).h: $(OUTPUT).c
+	@cp $(TARGET).h $@
 
 #---------------------------------------------------------------------------------
 # This rule links in binary data with the .jpg extension
