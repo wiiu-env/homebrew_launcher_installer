@@ -2,6 +2,16 @@
 #include "../sd_loader/src/common.h"
 #include "../sd_loader/sd_loader.h"
 #include <stdint.h>
+#include "dynamic.h"
+#include <stdbool.h>
+#include <coreinit/thread.h>
+#include <sysapp/launch.h>
+#include <proc_ui/procui.h>
+#include <coreinit/foreground.h>
+#include <coreinit/title.h>
+#include <sysapp/title.h>
+#include <stdio.h>
+#include <string.h>
 
 #define OSDynLoad_Acquire ((void (*)(char* rpl, unsigned int *handle))0x0102A3B4)
 #define OSDynLoad_FindExport ((void (*)(unsigned int handle, int isdata, char *symbol, void *address))0x0102B828)
@@ -52,16 +62,30 @@ typedef struct _private_data_t {
     EXPORT_DECL(int, FSInit, void);
     EXPORT_DECL(int, FSAddClientEx, void *pClient, int unk_zero_param, int errHandling);
     EXPORT_DECL(int, FSDelClient, void *pClient);
+
     EXPORT_DECL(void, FSInitCmdBlock, void *pCmd);
+
     EXPORT_DECL(int, FSGetMountSource, void *pClient, void *pCmd, int type, void *source, int errHandling);
+
     EXPORT_DECL(int, FSMount, void *pClient, void *pCmd, void *source, const char *target, uint32_t bytes, int errHandling);
+
     EXPORT_DECL(int, FSUnmount, void *pClient, void *pCmd, const char *target, int errHandling);
+
     EXPORT_DECL(int, FSOpenFile, void *pClient, void *pCmd, const char *path, const char *mode, int *fd, int errHandling);
+
     EXPORT_DECL(int, FSGetStatFile, void *pClient, void *pCmd, int fd, void *buffer, int error);
+
     EXPORT_DECL(int, FSReadFile, void *pClient, void *pCmd, void *buffer, int size, int count, int fd, int flag, int errHandling);
+
     EXPORT_DECL(int, FSCloseFile, void *pClient, void *pCmd, int fd, int errHandling);
 
-    EXPORT_DECL(int, SYSRelaunchTitle, int argc, char** argv);
+    EXPORT_DECL(int, SYSRelaunchTitle, int argc, char **argv);
+
+    EXPORT_DECL(int, _SYSLaunchMiiStudio);
+
+    EXPORT_DECL(int, SYSLaunchMenu);
+
+    EXPORT_DECL(uint64_t, OSGetTitleID);
 } private_data_t;
 
 static void InstallPatches(private_data_t *private_data);
@@ -75,10 +99,11 @@ static void loadFunctionPointers(private_data_t * private_data) {
     unsigned int *functionPtr = 0;
 
     OSDynLoad_FindExport(coreinit_handle, 1, "MEMAllocFromDefaultHeapEx", &functionPtr);
-    private_data->MEMAllocFromDefaultHeapEx = (void * (*)(int, int))*functionPtr;
+    private_data->MEMAllocFromDefaultHeapEx = (void *(*)(int, int)) *functionPtr;
     OSDynLoad_FindExport(coreinit_handle, 1, "MEMFreeToDefaultHeap", &functionPtr);
-    private_data->MEMFreeToDefaultHeap = (void (*)(void *))*functionPtr;
+    private_data->MEMFreeToDefaultHeap = (void (*)(void *)) *functionPtr;
 
+    OS_FIND_EXPORT(coreinit_handle, "OSGetTitleID", private_data->OSGetTitleID);
     OS_FIND_EXPORT(coreinit_handle, "memcpy", private_data->memcpy);
     OS_FIND_EXPORT(coreinit_handle, "memset", private_data->memset);
     OS_FIND_EXPORT(coreinit_handle, "DCFlushRange", private_data->DCFlushRange);
@@ -102,6 +127,8 @@ static void loadFunctionPointers(private_data_t * private_data) {
     unsigned int sysapp_handle;
     OSDynLoad_Acquire("sysapp.rpl", &sysapp_handle);
     OS_FIND_EXPORT(sysapp_handle, "SYSRelaunchTitle", private_data->SYSRelaunchTitle);
+    OS_FIND_EXPORT(sysapp_handle, "_SYSLaunchMiiStudio", private_data->_SYSLaunchMiiStudio);
+    OS_FIND_EXPORT(sysapp_handle, "SYSLaunchMenu", private_data->SYSLaunchMenu);
 }
 
 static unsigned int load_elf_image (private_data_t *private_data, unsigned char *elfstart) {
@@ -156,32 +183,50 @@ static unsigned int load_elf_image (private_data_t *private_data, unsigned char 
     return ehdr->e_entry;
 }
 
-
 void KernelWriteU32(uint32_t addr, uint32_t value, private_data_t * pdata) {
     pdata->ICInvalidateRange(&value, 4);
     pdata->DCFlushRange(&value, 4);
 
-    uint32_t dst = (uint32_t) pdata->OSEffectiveToPhysical((void *)addr);
-    uint32_t src = (uint32_t) pdata->OSEffectiveToPhysical((void *)&value);
+    uint32_t dst = (uint32_t) pdata->OSEffectiveToPhysical((void *) addr);
+    uint32_t src = (uint32_t) pdata->OSEffectiveToPhysical((void *) &value);
 
     SC_0x25_KernelCopyData(dst, src, 4);
 
-    pdata->DCFlushRange((void *)addr, 4);
-    pdata->ICInvalidateRange((void *)addr, 4);
+    pdata->DCFlushRange((void *) addr, 4);
+    pdata->ICInvalidateRange((void *) addr, 4);
+}
+
+bool CheckRunning() {
+    switch (ProcUIProcessMessages(true)) {
+        case PROCUI_STATUS_EXITING: {
+            return false;
+        }
+        case PROCUI_STATUS_RELEASE_FOREGROUND: {
+            ProcUIDrawDoneRelease();
+            break;
+        }
+        case PROCUI_STATUS_IN_FOREGROUND: {
+            break;
+        }
+        case PROCUI_STATUS_IN_BACKGROUND:
+        default:
+            break;
+    }
+    return true;
 }
 
 int _start(int argc, char **argv) {
-    kern_write((void*)(KERN_SYSCALL_TBL_1 + (0x25 * 4)), (unsigned int)SCKernelCopyData);
-    kern_write((void*)(KERN_SYSCALL_TBL_2 + (0x25 * 4)), (unsigned int)SCKernelCopyData);
-    kern_write((void*)(KERN_SYSCALL_TBL_3 + (0x25 * 4)), (unsigned int)SCKernelCopyData);
-    kern_write((void*)(KERN_SYSCALL_TBL_4 + (0x25 * 4)), (unsigned int)SCKernelCopyData);
-    kern_write((void*)(KERN_SYSCALL_TBL_5 + (0x25 * 4)), (unsigned int)SCKernelCopyData);
+    kern_write((void *) (KERN_SYSCALL_TBL_1 + (0x25 * 4)), (unsigned int) SCKernelCopyData);
+    kern_write((void *) (KERN_SYSCALL_TBL_2 + (0x25 * 4)), (unsigned int) SCKernelCopyData);
+    kern_write((void *) (KERN_SYSCALL_TBL_3 + (0x25 * 4)), (unsigned int) SCKernelCopyData);
+    kern_write((void *) (KERN_SYSCALL_TBL_4 + (0x25 * 4)), (unsigned int) SCKernelCopyData);
+    kern_write((void *) (KERN_SYSCALL_TBL_5 + (0x25 * 4)), (unsigned int) SCKernelCopyData);
 
-    kern_write((void*)(KERN_SYSCALL_TBL_1 + (0x36 * 4)), (unsigned int)KernelPatches);
-    kern_write((void*)(KERN_SYSCALL_TBL_2 + (0x36 * 4)), (unsigned int)KernelPatches);
-    kern_write((void*)(KERN_SYSCALL_TBL_3 + (0x36 * 4)), (unsigned int)KernelPatches);
-    kern_write((void*)(KERN_SYSCALL_TBL_4 + (0x36 * 4)), (unsigned int)KernelPatches);
-    kern_write((void*)(KERN_SYSCALL_TBL_5 + (0x36 * 4)), (unsigned int)KernelPatches);
+    kern_write((void *) (KERN_SYSCALL_TBL_1 + (0x36 * 4)), (unsigned int) KernelPatches);
+    kern_write((void *) (KERN_SYSCALL_TBL_2 + (0x36 * 4)), (unsigned int) KernelPatches);
+    kern_write((void *) (KERN_SYSCALL_TBL_3 + (0x36 * 4)), (unsigned int) KernelPatches);
+    kern_write((void *) (KERN_SYSCALL_TBL_4 + (0x36 * 4)), (unsigned int) KernelPatches);
+    kern_write((void *) (KERN_SYSCALL_TBL_5 + (0x36 * 4)), (unsigned int) KernelPatches);
 
     Syscall_0x36();
 
@@ -190,11 +235,11 @@ int _start(int argc, char **argv) {
 
     InstallPatches(&private_data);
 
-    unsigned char * pElfBuffer = (unsigned char *) sd_loader; // use this address as temporary to load the elf
+    unsigned char *pElfBuffer = (unsigned char *) sd_loader; // use this address as temporary to load the elf
 
     unsigned int mainEntryPoint = load_elf_image(&private_data, pElfBuffer);
 
-    if(mainEntryPoint == 0) {
+    if (mainEntryPoint == 0) {
         OSFatal("failed to load elf");
     }
 
@@ -203,14 +248,41 @@ int _start(int argc, char **argv) {
     unsigned int jump_addr = mainEntryPoint & 0x03fffffc;
 
     unsigned int bufferU32 = 0x48000003 | jump_addr;
-    KernelWriteU32(repl_addr,bufferU32,&private_data);
+    KernelWriteU32(repl_addr, bufferU32, &private_data);
 
-    // restart mii maker.
-    private_data.SYSRelaunchTitle(0, 0);
-    private_data.exit(0);
+    InitFunctionPointers();
+
+    if (
+            OSGetTitleID() == 0x000500101004A200L || // mii maker eur
+            OSGetTitleID() == 0x000500101004A100L || // mii maker usa
+            OSGetTitleID() == 0x000500101004A000L) {   // mii maker jpn
+
+        // restart mii maker.
+        private_data.SYSRelaunchTitle(0, 0);
+        private_data.exit(0);
+    } else {
+        ProcUIInit(OSSavesDone_ReadyToRelease);
+        for (int i = 0; i < argc; i++) {
+            if(strcmp(argv[i], "void forceDefaultTitleIDToWiiUMenu(void)") == 0){
+                if((i + 1) < argc){
+                    i++;
+                    void (*forceDefaultTitleIDToWiiUMenu)(void) = (void (*)(void)) argv[i];
+                    forceDefaultTitleIDToWiiUMenu();
+                }
+            }
+        }
+        SYSLaunchMenu();
+
+        while (CheckRunning()) {
+            // wait.
+            OSSleepTicks(OSMillisecondsToTicks(100));
+        }
+        ProcUIShutdown();
+
+        return 0;
+    }
+
     return 0;
-
-    //return ((int (*)(int, char **))mainEntryPoint)(argc, argv);
 }
 
 /* Write a 32-bit word with kernel permissions */

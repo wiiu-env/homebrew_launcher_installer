@@ -5,3 +5,4 @@ payload.bin
 .idea/
 cmake-build-debug/
 CMakeLists.txt
+payload.elf.bin
